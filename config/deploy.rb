@@ -1,7 +1,7 @@
 set :scm,             :git
-set :repo_url,        'git@github.com:YouServe/YouServe.git'
-set :application,     'YouServe'
-set :user,            'weserve'
+set :repo_url,        'git@github.com:softdevbeing/-southwest-checkin.git'
+set :application,     'southwest-checkin'
+set :user,            'deploy'
 set :puma_threads,    [4, 16]
 set :puma_workers,    0
 
