@@ -4,6 +4,7 @@ default: &default
   pool: 25
   username: postgres
   password: postgres
+
 development:
   <<: *default
   database: southwest-checkin_development
@@ -15,5 +16,4 @@ test:
 production:
   <<: *default
   database: southwest_checkin_production
-  username: <%= ENV['SOUTHWEST_CHECKIN_DATABASE_USER'] %>
-  password: <%= ENV['SOUTHWEST_CHECKIN_DATABASE_PASSWORD'] %>
+  
