@@ -1,111 +1,106 @@
-require 'mina/bundler'
-require 'mina/rails'
-require 'mina/git'
-require 'mina/rbenv'
-require 'mina/puma'
-require 'mina_sidekiq/tasks'
-require 'mina/scp'
-require 'mina/newrelic'
-require 'dotenv'
-Dotenv.load
+set :scm,             :git
+set :repo_url,        'git@github.com:YouServe/YouServe.git'
+set :application,     'YouServe'
+set :user,            'weserve'
+set :puma_threads,    [4, 16]
+set :puma_workers,    0
 
-# Basic settings:
-#   domain       - The hostname to SSH to.
-#   deploy_to    - Path to deploy into.
-#   repository   - Git repo to clone from. (needed by mina/git)
-#   branch       - Branch name to deploy. (needed by mina/git)
+# Don't change these unless you know what you're doing
+set :pty,             true
+set :use_sudo,        false
+set :stage,           :production
+set :deploy_via,      :remote_cache
+set :deploy_to,       "/home/#{fetch(:user)}/#{fetch(:application)}"
+set :puma_bind,       "unix://#{shared_path}/tmp/sockets/#{fetch(:application)}-puma.sock"
+set :puma_state,      "#{shared_path}/tmp/pids/puma.state"
+set :puma_pid,        "#{shared_path}/tmp/pids/puma.pid"
+set :puma_access_log, "#{release_path}/log/puma.error.log"
+set :puma_error_log,  "#{release_path}/log/puma.access.log"
+set :ssh_options,     { forward_agent: true, user: fetch(:user), keys: %w(~/.ssh/deploy_id_rsa.pub) }
+set :puma_preload_app, true
+set :puma_worker_timeout, nil
+set :puma_init_active_record, true  # Change to false when not using ActiveRecord
 
-set :domain, ENV['DEPLOY_DOMAIN']
-set :deploy_to, ENV['DEPLOY_TO']
-set :repository, ENV['DEPLOY_REPOSITORY']
-set :branch, ENV['DEPLOY_BRANCH']
+## Defaults:
+# set :branch,        :master
+# set :format,        :pretty
+# set :log_level,     :debug
+# set :keep_releases, 5
 
-# For system-wide RVM install.
-#   set :rvm_path, '/usr/local/rvm/bin/rvm'
+## Linked Files & Directories (Default None):
+set :linked_files, %w{config/application.yml config/database.yml}
+set :linked_dirs,  %w{bin log tmp/pids tmp/cache tmp/sockets vendor/bundle public/system}
 
-# Manually create these paths in shared/ (eg: shared/config/database.yml) in your server.
-# They will be linked in the 'deploy:link_shared_paths' step.
-set :shared_paths, ['log', '.env']
-
-# Optional settings:
-set :user, ENV['DEPLOY_USER']    # Username in the server to SSH to.
-set :port, ENV['DEPLOY_PORT']     # SSH port number.
-set :forward_agent, true     # SSH forward_agent.
-
-set :use_rbenv, ENV['DEPLOY_USE_RBENV'] == 'true'
-
-# This task is the environment that is loaded for most commands, such as
-# `mina deploy` or `mina rake`.
-task :environment do
-  # If you're using rbenv, use this to load the rbenv environment.
-  # Be sure to commit your .ruby-version or .rbenv-version to your repository.
-  invoke :'rbenv:load' if use_rbenv
-
-  # For those using RVM, use this to load an RVM version@gemset.
-  # invoke :'rvm:use[ruby-1.9.3-p125@default]'
+# Bonus! Colors are pretty!
+def red(str)
+  "\e[31m#{str}\e[0m"
 end
 
-# Put any custom mkdir's in here for when `mina setup` is ran.
-# For Rails apps, we'll make some of the shared paths that are shared between
-# all releases.
-task :setup => :environment do
-  queue! %[mkdir -p "#{deploy_to}/#{shared_path}/log"]
-  queue! %[chmod g+rx,u+rwx "#{deploy_to}/#{shared_path}/log"]
-
-  queue! %[mkdir -p "#{deploy_to}/#{shared_path}/config"]
-  queue! %[chmod g+rx,u+rwx "#{deploy_to}/#{shared_path}/config"]
-
-  queue! %[mkdir -p "#{deploy_to}/#{shared_path}/tmp/sockets"]
-  queue! %[chmod g+rx,u+rwx "#{deploy_to}/#{shared_path}/tmp/sockets"]
-
-  queue! %[mkdir -p "#{deploy_to}/#{shared_path}/tmp/pids"]
-  queue! %[chmod g+rx,u+rwx "#{deploy_to}/#{shared_path}/tmp/pids"]
-
-  queue! %[mkdir -p "#{deploy_to}/#{shared_path}/pids"]
-  queue! %[chmod g+rx,u+rwx "#{deploy_to}/#{shared_path}/pids"]
+# Figure out the name of the current local branch
+def current_git_branch
+  branch = `git symbolic-ref HEAD 2> /dev/null`.strip.gsub(/^refs\/heads\//, '')
+  puts "Deploying branch #{red branch}"
+  branch
 end
 
-task :restart => :environment do
-  queue %[sudo service puma-manager restart]
-  queue %[sudo service workers restart]
-end
+# Set the deploy branch to the current branch
+set :branch, current_git_branch
 
-namespace :config do
-  desc "Upload .env config"
-  task upload: :environment do
-    scp_upload '.env', "#{deploy_to}/#{shared_path}/.env"
-  end
-end
-
-desc "Deploys the current version to the server."
-task :deploy => :environment do
-  deploy do
-    # Put things that will set up an empty directory into a fully set-up
-    # instance of your project.
-    invoke :'sidekiq:quiet' unless ENV['DEPLOY_USE_UPSTART']
-    invoke :'git:clone'
-    invoke :'deploy:link_shared_paths'
-    invoke :'bundle:install'
-    invoke :'rails:db_migrate'
-    invoke :'rails:assets_precompile'
-    invoke :'deploy:cleanup'
-
-    to :launch do
-      if ENV['DEPLOY_USE_UPSTART']
-        invoke :'restart'
-      else
-        invoke :'puma:phased_restart'
-        invoke :'sidekiq:restart'
-      end
-      invoke :'newrelic:notice_deployment'
+namespace :puma do
+  desc 'Create Directories for Puma Pids and Socket'
+  task :make_dirs do
+    on roles(:app) do
+      execute "mkdir #{shared_path}/tmp/sockets -p"
+      execute "mkdir #{shared_path}/tmp/pids -p"
     end
   end
+
+  before :start, :make_dirs
 end
 
-# For help in making your deploy script, see the Mina documentation:
-#
-#  - http://nadarei.co/mina
-#  - http://nadarei.co/mina/tasks
-#  - http://nadarei.co/mina/settings
-#  - http://nadarei.co/mina/helpers
+namespace :assets do
+  desc "compile assets locally and upload before finalize_update"
+  task :deploy do
+      %x[bundle exec rake assets:clean && bundle exec rake assets:precompile]
+      ENV['COMMAND'] = " mkdir '#{release_path}/public/assets'"
+      invoke
+      upload '/#{app_dir}/public/assets', "#{release_path}/public/assets", {:recursive => true}
+  end
+end
 
+namespace :deploy do
+  desc "Make sure local git is in sync with remote."
+  task :check_revision do
+    on roles(:app) do
+      #unless `git rev-parse HEAD` == `git rev-parse origin/master`
+      #  puts "WARNING: HEAD is not the same as origin/master"
+      #  puts "Run `git push` to sync changes."
+      #  exit
+      #end
+    end
+  end
+
+  desc 'Initial Deploy'
+  task :initial do
+    on roles(:app) do
+      before 'deploy:restart', 'puma:start'
+      invoke 'deploy'
+    end
+  end
+
+  # desc 'Restart application'
+  # task :restart do
+  #   on roles(:app), in: :sequence, wait: 5 do
+  #     invoke 'puma:restart'
+  #   end
+  # end
+
+  before :starting,     :check_revision
+  after  :finishing,    :compile_assets
+  after  :finishing,    :cleanup
+  after  :finishing,    :restart
+end
+
+# ps aux | grep puma    # Get puma pid
+# kill -s SIGUSR2 pid   # Restart puma
+# kill -s SIGTERM pid   # Stop puma
