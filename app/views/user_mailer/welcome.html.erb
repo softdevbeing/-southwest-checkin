@@ -12,11 +12,11 @@
   </span>
 <% end %>
 
-<h1>Welcome to <%= link_to ENV['SITE_NAME'], ENV['SITE_URL'] %>!</h1>
+<h1>Welcome to <%= link_to ENV['SITE_NAME'], "http://138.68.53.232" %>!</h1>
 <p>
   Thanks for joining <%= @email %>. You can get started by <%= link_to "adding a reservation", new_reservation_url %>, or <%= link_to 'viewing your current reservations', reservations_url %>.
 </p>
 <p>
   Cheers,<br>
-  <%= link_to ENV['SITE_NAME'], ENV['SITE_URL'] %>
+  <%= link_to ENV['SITE_NAME'], "http://138.68.53.232" %>
 </p>
