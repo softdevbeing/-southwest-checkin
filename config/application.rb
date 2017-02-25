@@ -38,5 +38,7 @@ module SouthwestCheckin
     require Rails.root.join('lib', 'southwest', 'errors.rb')
 
     config.active_job.queue_adapter = :sidekiq
+    config.time_zone = 'Eastern Time (US & Canada)'
+    config.active_record.default_timezone = :local
   end
 end
